@@ -1,20 +1,8 @@
-Déposez ici une photo par artiste (JPG, carrée de préférence, ~400x400 px)
-en respectant EXACTEMENT ces noms de fichiers :
+Les photos des artistes sont trouvées automatiquement (Deezer). Ce dossier ne sert
+que pour remplacer une photo : déposez-y une image (JPG, carrée, ~400x400 px), puis
+indiquez son chemin dans le champ `photo` de la chanson, par exemple :
 
-  public/photos/claude-francois.jpg      <- Claude François
-  public/photos/joe-dassin.jpg           <- Joe Dassin
-  public/photos/gilbert-montagne.jpg     <- Gilbert Montagné
-  public/photos/daniel-guichard.jpg      <- Daniel Guichard
-  public/photos/louise-attaque.jpg       <- Louise Attaque
-  public/photos/frankie-vincent.jpg      <- Frankie Vincent
-  public/photos/celine-dion.jpg          <- Céline Dion
-  public/photos/lorie.jpg                <- Lorie
-  public/photos/stromae.jpg              <- Stromae
-  public/photos/pigloo.jpg               <- Pigloo
-  public/photos/gims.jpg                 <- Gims
-  public/photos/lagaf.jpg                <- Lagaf'
-  public/photos/gregoire.jpg             <- Grégoire
+  { artiste: "Stromae", titre: "Papaoutai", photo: "/photos/stromae.jpg" }
 
-Si vous changez un interprète dans data/roues.ts, le nom attendu change aussi
-(minuscules, sans accents, espaces et apostrophes remplacés par des tirets).
-Sans photo, la roue affiche les initiales.
+On peut aussi coller l'adresse d'une image dans l'éditeur du site
+(✏️ Chansons → « Photo et lien karaoké »).

@@ -17,8 +17,10 @@ export const initiales = (s: string) =>
     .map((w) => w[0].toUpperCase())
     .join("");
 
-export const photoUrl = (c: Pick<Chanson, "artiste" | "photo">) =>
-  c.photo ?? `/photos/${slugify(c.artiste)}.jpg`;
+/** Photo choisie (champ `photo`) sinon photo de l'artiste trouvée sur Deezer (voir app/api/photo) */
+export const photoUrl = (c: Pick<Chanson, "artiste" | "titre" | "photo">) =>
+  c.photo?.trim() ||
+  `/api/photo?artiste=${encodeURIComponent(c.artiste)}&titre=${encodeURIComponent(c.titre)}`;
 
 export const karaokeUrl = (c: Pick<Chanson, "artiste" | "titre" | "karaoke">) =>
   c.karaoke?.trim() ||

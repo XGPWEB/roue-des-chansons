@@ -3,7 +3,7 @@ export type Chanson = {
   titre: string;
   /** true = vraie possibilité ; false = fausse piste (vient de VRAIES_CHANSONS, jamais du code) */
   vraie: boolean;
-  /** Chemin d'une photo dans /public (ex. "/photos/stromae.jpg"). Par défaut : /photos/<artiste-en-slug>.jpg */
+  /** URL d'une photo, ou chemin dans /public (ex. "/photos/stromae.jpg"). Par défaut : photo de l'artiste sur Deezer */
   photo?: string;
   /** Lien direct vers la version karaoké choisie. Par défaut : recherche YouTube « artiste titre karaoké » */
   karaoke?: string;

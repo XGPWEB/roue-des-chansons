@@ -3,39 +3,29 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Chanson, RoueConfig } from "@/data/types";
 import { audio, confettis, fanfare, tick } from "@/lib/effets";
-import { initiales, karaokeUrl, photoUrl } from "@/lib/utils";
+import { karaokeUrl, photoUrl } from "@/lib/utils";
+import { Avatar } from "./Avatar";
+import Editeur, { listeValide, type Liste } from "./Editeur";
 
 const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1a"];
 const CLAIRES = new Set(["#f5c542"]);
 
 type Resultat = { chanson: Omit<Chanson, "vraie"> & { vraie?: boolean }; type: "tirage" | "lancement" };
-type Prefs = { animateur: boolean; retirer: boolean; tirees: number[] };
-
-function Avatar({ c }: { c: Pick<Chanson, "artiste" | "photo"> }) {
-  const [ok, setOk] = useState(true);
-  const img = useRef<HTMLImageElement>(null);
-  // L'image rendue côté serveur peut échouer avant l'hydratation : onError ne se déclenche alors jamais.
-  useEffect(() => {
-    const el = img.current;
-    if (el && el.complete && el.naturalWidth === 0) setOk(false);
-  }, []);
-  return (
-    <>
-      <span className="ini">{initiales(c.artiste)}</span>
-      {ok && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img ref={img} src={photoUrl(c)} alt="" onError={() => setOk(false)} />
-      )}
-    </>
-  );
-}
+type Prefs = { animateur: boolean; retirer: boolean; tirees: number[]; admin: boolean };
 
 export default function Roue({ roue }: { roue: RoueConfig }) {
-  const N = roue.chansons.length;
-  const STEP = 360 / N;
   const cle = `roue:${roue.slug}`;
+  const cleListe = `${cle}:liste`;
 
-  const [prefs, setPrefs] = useState<Prefs>({ animateur: false, retirer: false, tirees: [] });
+  /* ---- liste de chansons : celle du site, ou celle modifiée dans ce navigateur ---- */
+  const [perso, setPerso] = useState<Liste | null>(null);
+  const [editeur, setEditeur] = useState(false);
+  const chansons = perso?.chansons ?? roue.chansons;
+  const lancementCh = perso ? perso.lancement : roue.lancement;
+  const N = chansons.length;
+  const STEP = 360 / N;
+
+  const [prefs, setPrefs] = useState<Prefs>({ animateur: false, retirer: false, tirees: [], admin: true });
   const [enCours, setEnCours] = useState(false);
   const [resultat, setResultat] = useState<Resultat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -59,7 +49,10 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
       const s = JSON.parse(localStorage.getItem(cle) ?? "null");
       if (s) setPrefs((p) => ({ ...p, ...s }));
     } catch {}
-  }, [cle]);
+    try {
+      setPerso(listeValide(JSON.parse(localStorage.getItem(cleListe) ?? "null")));
+    } catch {}
+  }, [cle, cleListe]);
   const majPrefs = useCallback(
     (f: (p: Prefs) => Prefs) =>
       setPrefs((p) => {
@@ -77,6 +70,20 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
+
+  const enregistrerListe = (l: Liste | null) => {
+    try {
+      if (l) localStorage.setItem(cleListe, JSON.stringify(l));
+      else localStorage.removeItem(cleListe);
+    } catch {
+      afficherToast("Impossible d'enregistrer dans ce navigateur (navigation privée ?)");
+    }
+    setPerso(l);
+    rot.current = 0; // le nombre de tranches a pu changer : on repart d'une tranche bien alignée
+    majPrefs((p) => ({ ...p, tirees: [] }));
+    setEditeur(false);
+    afficherToast(l ? `Liste enregistrée : ${l.chansons.length} chansons` : "Liste initiale du site rétablie");
+  };
 
   /* ---- rendu 3D (impératif, 60 i/s pendant la rotation) ---- */
   const dessiner = useCallback(() => {
@@ -133,7 +140,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   const tourner = useCallback(() => {
     if (enCours) return;
     audio();
-    const candidats = roue.chansons.map((_, i) => i).filter((i) => !(prefs.retirer && prefs.tirees.includes(i)));
+    const candidats = chansons.map((_, i) => i).filter((i) => !(prefs.retirer && prefs.tirees.includes(i)));
     if (!candidats.length) {
       afficherToast("Toutes les chansons ont été tirées — « Remettre en jeu »");
       return;
@@ -164,19 +171,19 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
       dessiner();
       setEnCours(false);
       setTimeout(() => {
-        const ch = roue.chansons[cible];
+        const ch = chansons[cible];
         if (prefs.retirer && !prefs.tirees.includes(cible)) majPrefs((p) => ({ ...p, tirees: [...p.tirees, cible] }));
         setResultat({ chanson: ch, type: "tirage" });
         celebrer(prefs.animateur ? ch.vraie : true);
       }, 350);
     };
     requestAnimationFrame(frame);
-  }, [enCours, roue.chansons, prefs, STEP, dessiner, majPrefs, celebrer, afficherToast]);
+  }, [enCours, chansons, prefs, STEP, dessiner, majPrefs, celebrer, afficherToast]);
 
   const lancement = () => {
-    if (!roue.lancement) return;
+    if (!lancementCh) return;
     audio();
-    setResultat({ chanson: roue.lancement, type: "lancement" });
+    setResultat({ chanson: lancementCh, type: "lancement" });
     celebrer(true);
   };
 
@@ -189,9 +196,14 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     }
   };
 
-  /* ---- clavier : Espace = tourner / fermer, Échap = fermer ---- */
+  const basculerAdmin = useCallback(() => majPrefs((p) => ({ ...p, admin: !p.admin })), [majPrefs]);
+
+  /* ---- clavier : Espace = tourner / fermer, Échap = fermer, A = afficher / masquer l'admin ---- */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const cible = e.target as HTMLElement | null;
+      if (editeur || cible?.closest("input, textarea, select, [contenteditable]")) return;
+      if (e.code === "KeyA" && !e.ctrlKey && !e.metaKey && !e.altKey) basculerAdmin();
       if (e.code === "Space") {
         e.preventDefault();
         if (resultat) setResultat(null);
@@ -201,42 +213,58 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [resultat, tourner]);
+  }, [resultat, tourner, editeur, basculerAdmin]);
 
   return (
     <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px` }}>
       <header>
         <h1>🎵 {roue.titre}</h1>
-        {roue.lancement && (
+        {lancementCh && (
           <button className="btn launch" onClick={lancement} title="Chanson de lancement">
             🎤 Lancement
           </button>
         )}
-        <button
-          className={`btn ${prefs.animateur ? "on" : ""}`}
-          onClick={() => majPrefs((p) => ({ ...p, animateur: !p.animateur }))}
-          title="Affiche ★ sur les vraies possibilités (à couper pendant la projection)"
-        >
-          👁 Mode animateur
-        </button>
-        <button
-          className={`btn ${prefs.retirer ? "on" : ""}`}
-          onClick={() => majPrefs((p) => ({ ...p, retirer: !p.retirer }))}
-          title="Une chanson tirée est grisée et ne peut plus sortir"
-        >
-          ⛔ Retirer les tirées
-        </button>
-        <button
-          className="btn"
-          onClick={() => {
-            majPrefs((p) => ({ ...p, tirees: [] }));
-            afficherToast("Toutes les chansons sont remises en jeu");
-          }}
-        >
-          ↺ Remettre en jeu
-        </button>
         <button className="btn" onClick={pleinEcran}>
           ⛶ Plein écran
+        </button>
+        {prefs.admin && (
+          <div className="admin" aria-label="Réglages de l'animateur">
+            <button
+              className={`btn ${prefs.animateur ? "on" : ""}`}
+              onClick={() => majPrefs((p) => ({ ...p, animateur: !p.animateur }))}
+              title="Affiche ★ sur les vraies possibilités (à couper pendant la projection)"
+            >
+              👁 Mode animateur
+            </button>
+            <button
+              className={`btn ${prefs.retirer ? "on" : ""}`}
+              onClick={() => majPrefs((p) => ({ ...p, retirer: !p.retirer }))}
+              title="Une chanson tirée est grisée et ne peut plus sortir"
+            >
+              ⛔ Retirer les tirées
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                majPrefs((p) => ({ ...p, tirees: [] }));
+                afficherToast("Toutes les chansons sont remises en jeu");
+              }}
+            >
+              ↺ Remettre en jeu
+            </button>
+            <button className="btn" onClick={() => setEditeur(true)} title="Choisir les chansons, ou tout refaire">
+              ✏️ Chansons{perso ? " •" : ""}
+            </button>
+          </div>
+        )}
+        <button
+          className={`btn admin-toggle ${prefs.admin ? "" : "discret"}`}
+          onClick={basculerAdmin}
+          title={prefs.admin ? "Masquer les réglages pendant la partie (touche A)" : "Afficher les réglages (touche A)"}
+          aria-label={prefs.admin ? "Masquer les réglages" : "Afficher les réglages"}
+          aria-expanded={prefs.admin}
+        >
+          {prefs.admin ? "⚙ Masquer" : "⚙"}
         </button>
       </header>
 
@@ -254,7 +282,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
               onClick={tourner}
               style={{ transform: `translateZ(${-R}px) rotateX(0deg)` }}
             >
-              {roue.chansons.map((c, i) => {
+              {chansons.map((c, i) => {
                 const coul = COULEURS[i % COULEURS.length];
                 const sortie = prefs.tirees.includes(i);
                 return (
@@ -267,7 +295,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
                     style={{ ["--c" as string]: coul, transform: `rotateX(${-i * STEP}deg) translateZ(${R}px)` }}
                   >
                     <div className="ph" style={{ background: CLAIRES.has(coul) ? "#a77d00" : "rgba(0,0,0,.35)" }}>
-                      <Avatar c={c} />
+                      <Avatar c={c} key={photoUrl(c)} />
                     </div>
                     <div className="tx">
                       <div className="ar">{c.artiste}</div>
@@ -294,7 +322,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
           <div className="card">
             <div className="pre">{resultat.type === "lancement" ? "🎤 Pour commencer…" : "La roue a choisi…"}</div>
             <div className="ph">
-              <Avatar c={resultat.chanson} />
+              <Avatar c={resultat.chanson} key={photoUrl(resultat.chanson)} />
             </div>
             <div className="ar">{resultat.chanson.artiste}</div>
             <div className="ti">{resultat.chanson.titre}</div>
@@ -313,6 +341,16 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
             </div>
           </div>
         </div>
+      )}
+
+      {editeur && (
+        <Editeur
+          actuelle={{ chansons, lancement: lancementCh }}
+          initiale={{ chansons: roue.chansons, lancement: roue.lancement }}
+          personnalisee={!!perso}
+          onEnregistrer={enregistrerListe}
+          onFermer={() => setEditeur(false)}
+        />
       )}
 
       {toast && <div className="toast">{toast}</div>}
