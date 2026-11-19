@@ -1,0 +1,20 @@
+Déposez ici une photo par artiste (JPG, carrée de préférence, ~400x400 px)
+en respectant EXACTEMENT ces noms de fichiers :
+
+  public/photos/claude-francois.jpg      <- Claude François
+  public/photos/joe-dassin.jpg           <- Joe Dassin
+  public/photos/gilbert-montagne.jpg     <- Gilbert Montagné
+  public/photos/daniel-guichard.jpg      <- Daniel Guichard
+  public/photos/louise-attaque.jpg       <- Louise Attaque
+  public/photos/frankie-vincent.jpg      <- Frankie Vincent
+  public/photos/celine-dion.jpg          <- Céline Dion
+  public/photos/lorie.jpg                <- Lorie
+  public/photos/stromae.jpg              <- Stromae
+  public/photos/pigloo.jpg               <- Pigloo
+  public/photos/gims.jpg                 <- Gims
+  public/photos/lagaf.jpg                <- Lagaf'
+  public/photos/gregoire.jpg             <- Grégoire
+
+Si vous changez un interprète dans data/roues.ts, le nom attendu change aussi
+(minuscules, sans accents, espaces et apostrophes remplacés par des tirets).
+Sans photo, la roue affiche les initiales.
