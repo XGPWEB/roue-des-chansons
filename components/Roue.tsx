@@ -12,6 +12,8 @@ const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1
 const CLAIRES = new Set(["#f5c542"]);
 /** Largeur d'une tranche par rapport à sa hauteur */
 const RATIO = 6.5;
+/** Part de la place disponible occupée par la roue (1 = tout l'écran) */
+const ECHELLE = 0.9;
 
 type Resultat = { chanson: Chanson; type: "tirage" | "lancement" };
 /** triche = l'animateur peut choisir la prochaine chanson ; sinon tirage vraiment au hasard.
@@ -117,7 +119,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
       const { clientWidth: largeur, clientHeight: hauteur } = document.documentElement;
       const parHauteur = (hauteur - 226) / (1 / t + 0.4);
       const parLargeur = (largeur * 0.94 - 70) / RATIO;
-      setH(Math.round(Math.max(48, Math.min(260, parHauteur, parLargeur))));
+      setH(Math.round(Math.max(48, Math.min(240, parHauteur * ECHELLE, parLargeur * ECHELLE))));
     };
     dimensionner();
     addEventListener("resize", dimensionner);
