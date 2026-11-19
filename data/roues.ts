@@ -20,7 +20,7 @@ export const roues: RoueSource[] = [
       { artiste: "Gilbert Montagné", titre: "On va s'aimer" },
       { artiste: "Daniel Guichard", titre: "Mon vieux" },
       { artiste: "Louise Attaque", titre: "Je t'emmène au vent" },
-      { artiste: "Frankie Vincent", titre: "Fruit de la passion" },
+      { artiste: "Francky Vincent", titre: "Fruit de la passion" },
       { artiste: "Céline Dion", titre: "J'irai où tu iras" },
       { artiste: "Lorie", titre: "Ta meilleure amie" },
       { artiste: "Stromae", titre: "Papaoutai" },
