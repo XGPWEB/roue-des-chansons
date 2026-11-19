@@ -11,8 +11,10 @@ import Karaoke from "./Karaoke";
 const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1a"];
 const CLAIRES = new Set(["#f5c542"]);
 
-type Resultat = { chanson: Omit<Chanson, "vraie"> & { vraie?: boolean }; type: "tirage" | "lancement" };
-type Prefs = { animateur: boolean; retirer: boolean; tirees: number[]; admin: boolean };
+type Resultat = { chanson: Chanson; type: "tirage" | "lancement" };
+/** triche = l'animateur peut choisir la prochaine chanson ; sinon tirage vraiment au hasard.
+ *  retirer = ne pas répéter les chansons déjà tirées ; masque = header masqué pendant la partie */
+type Prefs = { triche: boolean; retirer: boolean; tirees: number[]; masque: boolean };
 
 export default function Roue({ roue }: { roue: RoueConfig }) {
   const cle = `roue:${roue.slug}`;
@@ -21,13 +23,16 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   /* ---- liste de chansons : celle du site, ou celle modifiée dans ce navigateur ---- */
   const [perso, setPerso] = useState<Liste | null>(null);
   const [editeur, setEditeur] = useState(false);
-  const [karaoke, setKaraoke] = useState<Resultat["chanson"] | null>(null);
+  const [karaoke, setKaraoke] = useState<Chanson | null>(null);
   const chansons = perso?.chansons ?? roue.chansons;
   const lancementCh = perso ? perso.lancement : roue.lancement;
   const N = chansons.length;
   const STEP = 360 / N;
 
-  const [prefs, setPrefs] = useState<Prefs>({ animateur: false, retirer: false, tirees: [], admin: true });
+  const [prefs, setPrefs] = useState<Prefs>({ triche: false, retirer: false, tirees: [], masque: false });
+  const [menu, setMenu] = useState(false);
+  /** Mode triche : index de la chanson qui sortira au prochain tirage (null = hasard). Jamais affiché sur la roue. */
+  const [forcee, setForcee] = useState<number | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [resultat, setResultat] = useState<Resultat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -44,12 +49,13 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   const flecheD = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const saisie = useRef({ texte: "", timer: undefined as ReturnType<typeof setTimeout> | undefined });
 
-  /* ---- préférences locales (mode animateur, chansons déjà tirées) ---- */
+  /* ---- préférences locales (ne pas répéter, chansons déjà tirées, header masqué) ---- */
   useEffect(() => {
     try {
       const s = JSON.parse(localStorage.getItem(cle) ?? "null");
-      if (s) setPrefs((p) => ({ ...p, ...s }));
+      if (s) setPrefs((p) => ({ ...p, triche: !!s.triche, retirer: !!s.retirer, tirees: Array.isArray(s.tirees) ? s.tirees : [], masque: !!s.masque }));
     } catch {}
     try {
       setPerso(listeValide(JSON.parse(localStorage.getItem(cleListe) ?? "null")));
@@ -67,10 +73,10 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     [cle],
   );
 
-  const afficherToast = useCallback((m: string) => {
+  const afficherToast = useCallback((m: string, duree = 2600) => {
     setToast(m);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
+    toastTimer.current = setTimeout(() => setToast(null), duree);
   }, []);
 
   const enregistrerListe = (l: Liste | null) => {
@@ -81,6 +87,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
       afficherToast("Impossible d'enregistrer dans ce navigateur (navigation privée ?)");
     }
     setPerso(l);
+    setForcee(null);
     rot.current = 0; // le nombre de tranches a pu changer : on repart d'une tranche bien alignée
     majPrefs((p) => ({ ...p, tirees: [] }));
     setEditeur(false);
@@ -134,20 +141,24 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     }
   };
 
-  const celebrer = useCallback((joyeuse: boolean) => {
-    fanfare(joyeuse);
+  const celebrer = useCallback(() => {
+    fanfare();
     if (canvas.current) confettis(canvas.current, COULEURS);
   }, []);
 
   const tourner = useCallback(() => {
     if (enCours) return;
     audio();
+    setMenu(false);
     const candidats = chansons.map((_, i) => i).filter((i) => !(prefs.retirer && prefs.tirees.includes(i)));
-    if (!candidats.length) {
-      afficherToast("Toutes les chansons ont été tirées — « Remettre en jeu »");
+    const triche = prefs.triche && forcee !== null && forcee < N ? forcee : null;
+    if (triche === null && !candidats.length) {
+      afficherToast("Toutes les chansons ont été tirées : ⚙ Animateur → « Tout remettre en jeu »");
       return;
     }
-    const cible = candidats[Math.floor(Math.random() * candidats.length)];
+    // Mode triche : la roue tourne exactement comme d'habitude, elle s'arrête simplement sur la chanson choisie
+    const cible = triche ?? candidats[Math.floor(Math.random() * candidats.length)];
+    setForcee(null);
     const depart = rot.current;
     let fin = Math.ceil(depart / 360) * 360 + cible * STEP;
     while (fin <= depart) fin += 360;
@@ -173,20 +184,20 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
       dessiner();
       setEnCours(false);
       setTimeout(() => {
-        const ch = chansons[cible];
         if (prefs.retirer && !prefs.tirees.includes(cible)) majPrefs((p) => ({ ...p, tirees: [...p.tirees, cible] }));
-        setResultat({ chanson: ch, type: "tirage" });
-        celebrer(prefs.animateur ? ch.vraie : true);
+        setResultat({ chanson: chansons[cible], type: "tirage" });
+        celebrer();
       }, 350);
     };
     requestAnimationFrame(frame);
-  }, [enCours, chansons, prefs, STEP, dessiner, majPrefs, celebrer, afficherToast]);
+  }, [enCours, chansons, N, prefs, forcee, STEP, dessiner, majPrefs, celebrer, afficherToast]);
 
   const lancement = () => {
     if (!lancementCh) return;
     audio();
+    setMenu(false);
     setResultat({ chanson: lancementCh, type: "lancement" });
-    celebrer(true);
+    celebrer();
   };
 
   const pleinEcran = async () => {
@@ -198,76 +209,179 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     }
   };
 
-  const basculerAdmin = useCallback(() => majPrefs((p) => ({ ...p, admin: !p.admin })), [majPrefs]);
+  const basculerMasque = useCallback(() => {
+    setMenu(false);
+    if (!prefs.masque) afficherToast("Menu masqué. Pour le retrouver : souris en haut de l'écran, ou touche A", 4000);
+    majPrefs((p) => ({ ...p, masque: !p.masque }));
+  }, [prefs.masque, majPrefs, afficherToast]);
 
-  /* ---- clavier : Espace = tourner / fermer, Échap = fermer, A = afficher / masquer l'admin ---- */
+  /* ---- clavier ----
+     Espace = tourner / fermer · Échap = fermer · A = masquer / afficher le menu
+     Chiffres = mode triche : taper le numéro d'une chanson (1 à N) avant Espace, 0 = retour au hasard. Rien ne s'affiche. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const cible = e.target as HTMLElement | null;
       if (editeur || karaoke || cible?.closest("input, textarea, select, [contenteditable]")) return;
-      if (e.code === "KeyA" && !e.ctrlKey && !e.metaKey && !e.altKey) basculerAdmin();
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (/^[0-9]$/.test(e.key)) {
+        if (!prefs.triche) return; // mode « vraiment au hasard » : les chiffres ne font rien
+        const s = saisie.current;
+        clearTimeout(s.timer);
+        s.texte += e.key;
+        if (Number(s.texte) > N) s.texte = e.key; // ex. « 15 » sur 12 chansons : on garde « 5 »
+        const n = Number(s.texte);
+        setForcee(n >= 1 && n <= N ? n - 1 : null);
+        s.timer = setTimeout(() => (s.texte = ""), 1200);
+        return;
+      }
+      if (e.code === "KeyA") basculerMasque();
       if (e.code === "Space") {
         e.preventDefault();
         if (resultat) setResultat(null);
         else tourner();
       }
-      if (e.key === "Escape") setResultat(null);
+      if (e.key === "Escape") {
+        setResultat(null);
+        setMenu(false);
+      }
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [resultat, tourner, editeur, karaoke, basculerAdmin]);
+  }, [resultat, tourner, editeur, karaoke, basculerMasque, N, prefs.triche]);
+
+  const nbTirees = prefs.tirees.filter((i) => i < N).length;
 
   return (
     <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px` }}>
-      <header>
+      <header className={prefs.masque ? "masque" : ""}>
         <h1>🎵 {roue.titre}</h1>
-        {lancementCh && (
-          <button className="btn launch" onClick={lancement} title="Chanson de lancement">
-            🎤 Lancement
+        <div className="hd-actions">
+          <button className="btn hd-plein" onClick={pleinEcran}>
+            ⛶ Plein écran
           </button>
-        )}
-        <button className="btn" onClick={pleinEcran}>
-          ⛶ Plein écran
-        </button>
-        {prefs.admin && (
-          <div className="admin" aria-label="Réglages de l'animateur">
+          <div className="menu-ancre">
             <button
-              className={`btn ${prefs.animateur ? "on" : ""}`}
-              onClick={() => majPrefs((p) => ({ ...p, animateur: !p.animateur }))}
-              title="Affiche ★ sur les vraies possibilités (à couper pendant la projection)"
+              className={`btn admin-toggle ${menu ? "on" : ""}`}
+              onClick={() => setMenu((m) => !m)}
+              aria-expanded={menu}
+              aria-haspopup="menu"
+              title="Réglages de l'animateur"
             >
-              👁 Mode animateur
+              ⚙{prefs.masque ? "" : " Animateur"}
             </button>
-            <button
-              className={`btn ${prefs.retirer ? "on" : ""}`}
-              onClick={() => majPrefs((p) => ({ ...p, retirer: !p.retirer }))}
-              title="Une chanson tirée est grisée et ne peut plus sortir"
-            >
-              ⛔ Retirer les tirées
-            </button>
-            <button
-              className="btn"
-              onClick={() => {
-                majPrefs((p) => ({ ...p, tirees: [] }));
-                afficherToast("Toutes les chansons sont remises en jeu");
-              }}
-            >
-              ↺ Remettre en jeu
-            </button>
-            <button className="btn" onClick={() => setEditeur(true)} title="Choisir les chansons, ou tout refaire">
-              ✏️ Chansons{perso ? " •" : ""}
-            </button>
+            {menu && (
+              <>
+                <div className="menu-fond" onClick={() => setMenu(false)} />
+                <div className="menu" aria-label="Réglages de l'animateur">
+                  <section>
+                    <h3>Mode de tirage</h3>
+                    <div className="menu-modes" role="radiogroup" aria-label="Mode de tirage">
+                      <button
+                        role="radio"
+                        aria-checked={!prefs.triche}
+                        className={!prefs.triche ? "on" : ""}
+                        onClick={() => {
+                          setForcee(null);
+                          majPrefs((p) => ({ ...p, triche: false }));
+                        }}
+                      >
+                        🎲 Vraiment au hasard
+                      </button>
+                      <button
+                        role="radio"
+                        aria-checked={prefs.triche}
+                        className={prefs.triche ? "on" : ""}
+                        onClick={() => majPrefs((p) => ({ ...p, triche: true }))}
+                      >
+                        🎯 Triche
+                      </button>
+                    </div>
+                    {prefs.triche && (
+                      <>
+                        <h3 className="menu-sous-titre">Prochaine chanson à sortir</h3>
+                        <div className="menu-liste">
+                          <button className={forcee === null ? "on" : ""} onClick={() => setForcee(null)}>
+                            <span className="num">🎲</span> Au hasard pour ce tour
+                          </button>
+                          {chansons.map((c, i) => (
+                            <button
+                              key={i}
+                              className={forcee === i ? "on" : ""}
+                              onClick={() => {
+                                setForcee(i);
+                                setMenu(false);
+                              }}
+                            >
+                              <span className="num">{i + 1}</span>
+                              <span className="menu-nom">
+                                {c.titre} <small>{c.artiste}</small>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <p className="menu-astuce">
+                          Sans ouvrir ce menu : tapez le numéro au clavier, puis Espace. 0 = au hasard. Rien ne s&apos;affiche à l&apos;écran,
+                          et le choix ne vaut que pour un tirage.
+                        </p>
+                      </>
+                    )}
+                  </section>
+
+                  <section>
+                    <label className="menu-interrupteur">
+                      <input
+                        type="checkbox"
+                        checked={prefs.retirer}
+                        onChange={() => majPrefs((p) => ({ ...p, retirer: !p.retirer }))}
+                      />
+                      <span>
+                        Ne pas répéter les chansons
+                        <small>Une chanson tirée devient grise et ne ressort plus.</small>
+                      </span>
+                    </label>
+                    {(prefs.retirer || nbTirees > 0) && (
+                      <div className="menu-ligne">
+                        <span>
+                          {nbTirees}/{N} déjà tirée{nbTirees > 1 ? "s" : ""}
+                        </span>
+                        <button
+                          className="btn petit"
+                          disabled={!nbTirees}
+                          onClick={() => {
+                            majPrefs((p) => ({ ...p, tirees: [] }));
+                            afficherToast("Toutes les chansons sont remises en jeu");
+                          }}
+                        >
+                          ↺ Tout remettre en jeu
+                        </button>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="menu-actions">
+                    {lancementCh && (
+                      <button className="btn" onClick={lancement} title="Pour démarrer la soirée, sans tourner la roue">
+                        🎤 Chanson d&apos;ouverture : {lancementCh.titre}
+                      </button>
+                    )}
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setMenu(false);
+                        setEditeur(true);
+                      }}
+                    >
+                      ✏️ Modifier les chansons{perso ? " (liste perso)" : ""}
+                    </button>
+                    <button className="btn" onClick={basculerMasque}>
+                      {prefs.masque ? "👁 Réafficher le menu en permanence" : "🙈 Masquer le menu pendant la partie"} <kbd>A</kbd>
+                    </button>
+                  </section>
+                </div>
+              </>
+            )}
           </div>
-        )}
-        <button
-          className={`btn admin-toggle ${prefs.admin ? "" : "discret"}`}
-          onClick={basculerAdmin}
-          title={prefs.admin ? "Masquer les réglages pendant la partie (touche A)" : "Afficher les réglages (touche A)"}
-          aria-label={prefs.admin ? "Masquer les réglages" : "Afficher les réglages"}
-          aria-expanded={prefs.admin}
-        >
-          {prefs.admin ? "⚙ Masquer" : "⚙"}
-        </button>
+        </div>
       </header>
 
       <main>
@@ -303,7 +417,6 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
                       <div className="ar">{c.artiste}</div>
                       <div className="ti">{c.titre}</div>
                     </div>
-                    {prefs.animateur && c.vraie && <span className="star">★</span>}
                   </div>
                 );
               })}
@@ -328,11 +441,6 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
             </div>
             <div className="ar">{resultat.chanson.artiste}</div>
             <div className="ti">{resultat.chanson.titre}</div>
-            {resultat.type === "tirage" && prefs.animateur && (
-              <div className={`badge ${resultat.chanson.vraie ? "ok" : "ko"}`}>
-                {resultat.chanson.vraie ? "✅ Vraie possibilité" : "❌ Fausse piste"}
-              </div>
-            )}
             <div className="row">
               <button
                 className="btn kara"

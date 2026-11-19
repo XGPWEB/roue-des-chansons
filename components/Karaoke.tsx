@@ -47,7 +47,7 @@ function chargerApi(): Promise<YTApi> {
 
 type Etat = { videos: Video[]; charge: boolean; erreur: string | null };
 
-export default function Karaoke({ chanson, onFermer }: { chanson: Omit<Chanson, "vraie">; onFermer: () => void }) {
+export default function Karaoke({ chanson, onFermer }: { chanson: Chanson; onFermer: () => void }) {
   const manuel = idYoutube(chanson.karaoke);
   const lienAutre = chanson.karaoke?.trim() && !manuel ? chanson.karaoke.trim() : null;
   const [etat, setEtat] = useState<Etat>({

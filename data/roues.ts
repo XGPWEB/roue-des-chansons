@@ -1,15 +1,11 @@
-import type { RoueSource } from "./types";
-import { avecVraies } from "@/lib/vraies";
+import type { RoueConfig } from "./types";
 
 /**
  * Toutes les roues de l'application.
  * Pour en ajouter une : copier un bloc, changer le slug, puis git push.
  * Elle sera disponible sur /<slug>.
- *
- * Les vraies possibilités ne sont PAS ici (dépôt public) : voir VRAIES_CHANSONS
- * dans .env.local (local) et dans les variables d'environnement Vercel.
  */
-export const roues: RoueSource[] = [
+export const roues: RoueConfig[] = [
   {
     slug: "chansons",
     titre: "La Roue des Chansons",
@@ -31,8 +27,6 @@ export const roues: RoueSource[] = [
   },
 ];
 
-/** Roue complète (avec vraie / fausse), à n'appeler que côté serveur */
 export function getRoue(slug: string) {
-  const roue = roues.find((r) => r.slug === slug);
-  return roue && avecVraies(roue);
+  return roues.find((r) => r.slug === slug);
 }

@@ -30,10 +30,10 @@ export function tick() {
   o.stop(a.currentTime + 0.035);
 }
 
-export function fanfare(joyeuse = true) {
+export function fanfare() {
   const a = audio();
   if (!a) return;
-  const notes = joyeuse ? [523, 659, 784, 1047] : [392, 330, 262];
+  const notes = [523, 659, 784, 1047];
   notes.forEach((f, i) => {
     const o = a.createOscillator();
     const g = a.createGain();

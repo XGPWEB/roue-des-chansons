@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Chanson, ChansonSource } from "@/data/types";
+import type { Chanson } from "@/data/types";
 import { photoUrl } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 
-export type Liste = { lancement?: ChansonSource; chansons: Chanson[] };
+export type Liste = { lancement?: Chanson; chansons: Chanson[] };
 
 type Ligne = Chanson & { id: number };
 type Suggestion = { artiste: string; titre: string; photo: string | null };
@@ -14,13 +14,12 @@ export const MIN_CHANSONS = 3;
 const CONSEILLE = 6;
 
 let compteur = 0;
-const ligne = (c: Partial<Chanson> = {}): Ligne => ({ id: ++compteur, artiste: "", titre: "", vraie: false, ...c });
+const ligne = (c: Partial<Chanson> = {}): Ligne => ({ id: ++compteur, artiste: "", titre: "", ...c });
 
 /** Nettoie une chanson (champs vides retirés) */
-const propre = ({ artiste, titre, vraie, photo, karaoke }: Chanson): Chanson => ({
+const propre = ({ artiste, titre, photo, karaoke }: Chanson): Chanson => ({
   artiste: artiste.trim(),
   titre: titre.trim(),
-  vraie,
   ...(photo?.trim() ? { photo: photo.trim() } : {}),
   ...(karaoke?.trim() ? { karaoke: karaoke.trim() } : {}),
 });
@@ -32,11 +31,11 @@ export function listeValide(x: unknown): Liste | null {
   if (!Array.isArray(o.chansons)) return null;
   const chansons = o.chansons
     .filter((c): c is Chanson => !!c && typeof c.artiste === "string" && typeof c.titre === "string")
-    .map((c) => propre({ ...c, vraie: c.vraie === true }));
+    .map(propre);
   if (chansons.length < MIN_CHANSONS) return null;
-  const l = o.lancement as ChansonSource | undefined;
+  const l = o.lancement as Chanson | undefined;
   const lancement = l && typeof l.artiste === "string" && typeof l.titre === "string" && l.titre.trim() ? l : undefined;
-  return { chansons, ...(lancement ? { lancement } : {}) };
+  return { chansons, ...(lancement ? { lancement: propre(lancement) } : {}) };
 }
 
 export default function Editeur({
@@ -53,7 +52,7 @@ export default function Editeur({
   onFermer: () => void;
 }) {
   const [lignes, setLignes] = useState<Ligne[]>(() => actuelle.chansons.map((c) => ligne(c)));
-  const [lancement, setLancement] = useState<ChansonSource>(actuelle.lancement ?? { artiste: "", titre: "" });
+  const [lancement, setLancement] = useState<Chanson>(actuelle.lancement ?? { artiste: "", titre: "" });
   const [q, setQ] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [recherche, setRecherche] = useState(false);
@@ -94,8 +93,8 @@ export default function Editeur({
       [n[i], n[j]] = [n[j], n[i]];
       return n;
     });
-  const ajouter = (s: Suggestion, vraie: boolean) =>
-    setLignes((ls) => [...ls, ligne({ artiste: s.artiste, titre: s.titre, vraie, ...(s.photo ? { photo: s.photo } : {}) })]);
+  const ajouter = (s: Suggestion) =>
+    setLignes((ls) => [...ls, ligne({ artiste: s.artiste, titre: s.titre, ...(s.photo ? { photo: s.photo } : {}) })]);
   const melanger = () =>
     setLignes((ls) => {
       const n = [...ls];
@@ -108,14 +107,11 @@ export default function Editeur({
 
   const remplies = lignes.filter((l) => l.artiste.trim() && l.titre.trim());
   const incompletes = lignes.length - remplies.length;
-  const nbVraies = remplies.filter((l) => l.vraie).length;
 
   const enregistrer = () => {
     if (incompletes) return setErreur(`${incompletes} ligne(s) sans artiste ou sans titre : complétez-les ou supprimez-les.`);
     if (remplies.length < MIN_CHANSONS) return setErreur(`Il faut au moins ${MIN_CHANSONS} chansons pour faire tourner la roue.`);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const sansVraie = ({ vraie, ...reste }: Chanson): ChansonSource => reste;
-    const lanc = lancement.titre.trim() ? sansVraie(propre({ ...lancement, vraie: false })) : undefined;
+    const lanc = lancement.titre.trim() ? propre(lancement) : undefined;
     onEnregistrer({ chansons: remplies.map(propre), ...(lanc ? { lancement: lanc } : {}) });
   };
 
@@ -176,11 +172,8 @@ export default function Editeur({
                       <b>{s.titre}</b>
                       <small>{s.artiste}</small>
                     </span>
-                    <button className="btn petit ok" onClick={() => ajouter(s, true)} title="Ajouter comme vraie possibilité">
-                      + Vraie
-                    </button>
-                    <button className="btn petit ko" onClick={() => ajouter(s, false)} title="Ajouter comme fausse piste">
-                      + Fausse
+                    <button className="btn petit" onClick={() => ajouter(s)}>
+                      + Ajouter
                     </button>
                   </li>
                 ))}
@@ -192,7 +185,7 @@ export default function Editeur({
             <div className="ed-label">
               Tranches de la roue{" "}
               <span className={remplies.length < CONSEILLE ? "ed-alerte" : "ed-info"}>
-                {remplies.length} chanson(s), dont {nbVraies} vraie(s)
+                {remplies.length} chanson(s)
                 {remplies.length < CONSEILLE && ` · ${CONSEILLE} ou plus conseillées`}
               </span>
             </div>
@@ -200,18 +193,14 @@ export default function Editeur({
             <ol className="ed-liste">
               {lignes.map((l, i) => (
                 <li key={l.id}>
+                  <span className="ed-num" title="Numéro à taper au clavier pour forcer le tirage">
+                    {i + 1}
+                  </span>
                   <span className="ph mini">
                     <Avatar c={l} key={photoUrl(l)} />
                   </span>
                   <input className="champ" placeholder="Artiste" value={l.artiste} onChange={(e) => maj(l.id, { artiste: e.target.value })} />
                   <input className="champ" placeholder="Titre" value={l.titre} onChange={(e) => maj(l.id, { titre: e.target.value })} />
-                  <button
-                    className={`btn petit ${l.vraie ? "ok" : "ko"}`}
-                    onClick={() => maj(l.id, { vraie: !l.vraie })}
-                    title="Cliquer pour basculer vraie / fausse"
-                  >
-                    {l.vraie ? "✅ Vraie" : "❌ Fausse"}
-                  </button>
                   <span className="ed-actions">
                     <button className="btn petit" onClick={() => deplacer(i, -1)} disabled={i === 0} aria-label="Monter">
                       ↑
