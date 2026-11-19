@@ -1,0 +1,322 @@
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Chanson, RoueConfig } from "@/data/types";
+import { audio, confettis, fanfare, tick } from "@/lib/effets";
+import { initiales, karaokeUrl, photoUrl } from "@/lib/utils";
+
+const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1a"];
+const CLAIRES = new Set(["#f5c542"]);
+
+type Resultat = { chanson: Omit<Chanson, "vraie"> & { vraie?: boolean }; type: "tirage" | "lancement" };
+type Prefs = { animateur: boolean; retirer: boolean; tirees: number[] };
+
+function Avatar({ c }: { c: Pick<Chanson, "artiste" | "photo"> }) {
+  const [ok, setOk] = useState(true);
+  const img = useRef<HTMLImageElement>(null);
+  // L'image rendue côté serveur peut échouer avant l'hydratation : onError ne se déclenche alors jamais.
+  useEffect(() => {
+    const el = img.current;
+    if (el && el.complete && el.naturalWidth === 0) setOk(false);
+  }, []);
+  return (
+    <>
+      <span className="ini">{initiales(c.artiste)}</span>
+      {ok && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img ref={img} src={photoUrl(c)} alt="" onError={() => setOk(false)} />
+      )}
+    </>
+  );
+}
+
+export default function Roue({ roue }: { roue: RoueConfig }) {
+  const N = roue.chansons.length;
+  const STEP = 360 / N;
+  const cle = `roue:${roue.slug}`;
+
+  const [prefs, setPrefs] = useState<Prefs>({ animateur: false, retirer: false, tirees: [] });
+  const [enCours, setEnCours] = useState(false);
+  const [resultat, setResultat] = useState<Resultat | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [H, setH] = useState(92);
+  const [ampoules, setAmpoules] = useState<{ x: number; y: number }[]>([]);
+
+  const R = H / 2 / Math.tan(Math.PI / N);
+  const rot = useRef(0);
+  const tambour = useRef<HTMLDivElement>(null);
+  const faces = useRef<(HTMLDivElement | null)[]>([]);
+  const cadre = useRef<HTMLDivElement>(null);
+  const zoneAmpoules = useRef<HTMLDivElement>(null);
+  const flecheG = useRef<HTMLDivElement>(null);
+  const flecheD = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  /* ---- préférences locales (mode animateur, chansons déjà tirées) ---- */
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(cle) ?? "null");
+      if (s) setPrefs((p) => ({ ...p, ...s }));
+    } catch {}
+  }, [cle]);
+  const majPrefs = useCallback(
+    (f: (p: Prefs) => Prefs) =>
+      setPrefs((p) => {
+        const n = f(p);
+        try {
+          localStorage.setItem(cle, JSON.stringify(n));
+        } catch {}
+        return n;
+      }),
+    [cle],
+  );
+
+  const afficherToast = useCallback((m: string) => {
+    setToast(m);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  /* ---- rendu 3D (impératif, 60 i/s pendant la rotation) ---- */
+  const dessiner = useCallback(() => {
+    if (tambour.current) tambour.current.style.transform = `translateZ(${-R}px) rotateX(${rot.current}deg)`;
+    faces.current.forEach((f, i) => {
+      if (!f) return;
+      const a = ((((rot.current - i * STEP) % 360) + 540) % 360) - 180;
+      const k = Math.max(0, Math.cos((a * Math.PI) / 180));
+      f.style.filter = `brightness(${(0.25 + 0.75 * k).toFixed(3)})`;
+    });
+  }, [R, STEP]);
+  useLayoutEffect(dessiner, [dessiner]);
+
+  /* ---- taille responsive + ampoules du cadre ---- */
+  useEffect(() => {
+    const dimensionner = () => setH(Math.round(Math.max(52, Math.min(96, innerHeight * 0.105))));
+    dimensionner();
+    addEventListener("resize", dimensionner);
+    return () => removeEventListener("resize", dimensionner);
+  }, []);
+  useEffect(() => {
+    const el = zoneAmpoules.current;
+    if (!el) return;
+    const placer = () => {
+      const w = el.clientWidth, h = el.clientHeight, per = 2 * (w + h), n = Math.round(per / 34);
+      setAmpoules(
+        Array.from({ length: n }, (_, k) => {
+          const d = (k * per) / n;
+          if (d < w) return { x: d, y: 0 };
+          if (d < w + h) return { x: w, y: d - w };
+          if (d < 2 * w + h) return { x: w - (d - w - h), y: h };
+          return { x: 0, y: h - (d - 2 * w - h) };
+        }),
+      );
+    };
+    const ro = new ResizeObserver(placer);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* ---- tirage ---- */
+  const coup = () => {
+    for (const r of [flecheG, flecheD]) {
+      r.current?.classList.add("kick");
+      setTimeout(() => r.current?.classList.remove("kick"), 60);
+    }
+  };
+
+  const celebrer = useCallback((joyeuse: boolean) => {
+    fanfare(joyeuse);
+    if (canvas.current) confettis(canvas.current, COULEURS);
+  }, []);
+
+  const tourner = useCallback(() => {
+    if (enCours) return;
+    audio();
+    const candidats = roue.chansons.map((_, i) => i).filter((i) => !(prefs.retirer && prefs.tirees.includes(i)));
+    if (!candidats.length) {
+      afficherToast("Toutes les chansons ont été tirées — « Remettre en jeu »");
+      return;
+    }
+    const cible = candidats[Math.floor(Math.random() * candidats.length)];
+    const depart = rot.current;
+    let fin = Math.ceil(depart / 360) * 360 + cible * STEP;
+    while (fin <= depart) fin += 360;
+    fin += 360 * (4 + Math.floor(Math.random() * 3));
+    const duree = 5200 + Math.random() * 1800;
+    const t0 = performance.now();
+    const ease = (x: number) => 1 - Math.pow(1 - x, 4);
+    let cran = Math.floor((depart + STEP / 2) / STEP);
+
+    setEnCours(true);
+    const frame = (now: number) => {
+      const p = Math.min(1, (now - t0) / duree);
+      rot.current = depart + (fin - depart) * ease(p);
+      const c = Math.floor((rot.current + STEP / 2) / STEP);
+      if (c !== cran) {
+        cran = c;
+        tick();
+        coup();
+      }
+      dessiner();
+      if (p < 1) return void requestAnimationFrame(frame);
+      rot.current = fin % 360;
+      dessiner();
+      setEnCours(false);
+      setTimeout(() => {
+        const ch = roue.chansons[cible];
+        if (prefs.retirer && !prefs.tirees.includes(cible)) majPrefs((p) => ({ ...p, tirees: [...p.tirees, cible] }));
+        setResultat({ chanson: ch, type: "tirage" });
+        celebrer(prefs.animateur ? ch.vraie : true);
+      }, 350);
+    };
+    requestAnimationFrame(frame);
+  }, [enCours, roue.chansons, prefs, STEP, dessiner, majPrefs, celebrer, afficherToast]);
+
+  const lancement = () => {
+    if (!roue.lancement) return;
+    audio();
+    setResultat({ chanson: roue.lancement, type: "lancement" });
+    celebrer(true);
+  };
+
+  const pleinEcran = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      afficherToast("Plein écran indisponible dans ce navigateur");
+    }
+  };
+
+  /* ---- clavier : Espace = tourner / fermer, Échap = fermer ---- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (resultat) setResultat(null);
+        else tourner();
+      }
+      if (e.key === "Escape") setResultat(null);
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [resultat, tourner]);
+
+  return (
+    <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px` }}>
+      <header>
+        <h1>🎵 {roue.titre}</h1>
+        {roue.lancement && (
+          <button className="btn launch" onClick={lancement} title="Chanson de lancement">
+            🎤 Lancement
+          </button>
+        )}
+        <button
+          className={`btn ${prefs.animateur ? "on" : ""}`}
+          onClick={() => majPrefs((p) => ({ ...p, animateur: !p.animateur }))}
+          title="Affiche ★ sur les vraies possibilités (à couper pendant la projection)"
+        >
+          👁 Mode animateur
+        </button>
+        <button
+          className={`btn ${prefs.retirer ? "on" : ""}`}
+          onClick={() => majPrefs((p) => ({ ...p, retirer: !p.retirer }))}
+          title="Une chanson tirée est grisée et ne peut plus sortir"
+        >
+          ⛔ Retirer les tirées
+        </button>
+        <button
+          className="btn"
+          onClick={() => {
+            majPrefs((p) => ({ ...p, tirees: [] }));
+            afficherToast("Toutes les chansons sont remises en jeu");
+          }}
+        >
+          ↺ Remettre en jeu
+        </button>
+        <button className="btn" onClick={pleinEcran}>
+          ⛶ Plein écran
+        </button>
+      </header>
+
+      <main>
+        <div className={`frame ${enCours ? "spinning" : ""}`} ref={cadre}>
+          <div className="bulbs" ref={zoneAmpoules}>
+            {ampoules.map((b, k) => (
+              <i key={k} className={`bulb ${k % 2 ? "alt" : "alt2"}`} style={{ left: b.x, top: b.y }} />
+            ))}
+          </div>
+          <div className="window">
+            <div
+              className="drum"
+              ref={tambour}
+              onClick={tourner}
+              style={{ transform: `translateZ(${-R}px) rotateX(0deg)` }}
+            >
+              {roue.chansons.map((c, i) => {
+                const coul = COULEURS[i % COULEURS.length];
+                const sortie = prefs.tirees.includes(i);
+                return (
+                  <div
+                    key={i}
+                    ref={(el) => {
+                      faces.current[i] = el;
+                    }}
+                    className={`face ${CLAIRES.has(coul) ? "dark" : ""} ${sortie ? "out" : ""}`}
+                    style={{ ["--c" as string]: coul, transform: `rotateX(${-i * STEP}deg) translateZ(${R}px)` }}
+                  >
+                    <div className="ph" style={{ background: CLAIRES.has(coul) ? "#a77d00" : "rgba(0,0,0,.35)" }}>
+                      <Avatar c={c} />
+                    </div>
+                    <div className="tx">
+                      <div className="ar">{c.artiste}</div>
+                      <div className="ti">{c.titre}</div>
+                    </div>
+                    {prefs.animateur && c.vraie && <span className="star">★</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="selband" />
+          <div className="ptr l" ref={flecheG} />
+          <div className="ptr r" ref={flecheD} />
+        </div>
+        <button className="spin" onClick={tourner} disabled={enCours}>
+          TOURNER !
+        </button>
+        <div className="hint">Barre d&apos;espace ou clic sur la roue pour lancer</div>
+      </main>
+
+      {resultat && (
+        <div className="modal" onClick={(e) => e.target === e.currentTarget && setResultat(null)}>
+          <div className="card">
+            <div className="pre">{resultat.type === "lancement" ? "🎤 Pour commencer…" : "La roue a choisi…"}</div>
+            <div className="ph">
+              <Avatar c={resultat.chanson} />
+            </div>
+            <div className="ar">{resultat.chanson.artiste}</div>
+            <div className="ti">{resultat.chanson.titre}</div>
+            {resultat.type === "tirage" && prefs.animateur && (
+              <div className={`badge ${resultat.chanson.vraie ? "ok" : "ko"}`}>
+                {resultat.chanson.vraie ? "✅ Vraie possibilité" : "❌ Fausse piste"}
+              </div>
+            )}
+            <div className="row">
+              <a className="btn kara" href={karaokeUrl(resultat.chanson)} target="_blank" rel="noopener noreferrer">
+                🎤 Lancer le karaoké
+              </a>
+              <button className="btn" onClick={() => setResultat(null)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
+      <canvas ref={canvas} className="confetti" />
+    </div>
+  );
+}
