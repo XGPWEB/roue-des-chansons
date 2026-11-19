@@ -9,12 +9,14 @@ Stack : **Next.js 16 (App Router) · React 19 · TypeScript**. Le site est 100 %
 
 ```bash
 npm install
+cp .env.example .env.local   # puis y mettre les vraies possibilités
 npm run dev        # http://localhost:3000
 ```
 
 | Je veux… | Fichier |
 |---|---|
-| Changer les chansons, la chanson de lancement, les vraies et fausses pistes | `data/roues.ts` |
+| Changer les chansons et la chanson de lancement | `data/roues.ts` |
+| Choisir les vraies possibilités (les autres sont des fausses pistes) | variable `VRAIES_CHANSONS` : `.env.local` en local, *Settings → Environment Variables* sur Vercel. Jamais dans le code, car le dépôt est public. Après un changement sur Vercel, redéployer |
 | Ajouter une autre roue (accessible sur `/<slug>`) | `data/roues.ts` : dupliquer un bloc |
 | Ajouter les photos des artistes | `public/photos/` (voir `LISEZ-MOI.txt`) |
 | Fixer un lien karaoké précis | champ `karaoke: "https://…"` de la chanson |
