@@ -10,6 +10,8 @@ import Karaoke from "./Karaoke";
 
 const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1a"];
 const CLAIRES = new Set(["#f5c542"]);
+/** Largeur d'une tranche par rapport à sa hauteur */
+const RATIO = 6.5;
 
 type Resultat = { chanson: Chanson; type: "tirage" | "lancement" };
 /** triche = l'animateur peut choisir la prochaine chanson ; sinon tirage vraiment au hasard.
@@ -108,11 +110,19 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
 
   /* ---- taille responsive + ampoules du cadre ---- */
   useEffect(() => {
-    const dimensionner = () => setH(Math.round(Math.max(52, Math.min(96, innerHeight * 0.105))));
+    // La roue occupe tout l'écran disponible : hauteur d'une tranche (H) calculée pour que
+    // cadre + bouton + header tiennent en hauteur, et que la roue (largeur = H × RATIO) tienne en largeur.
+    const dimensionner = () => {
+      const t = Math.tan(Math.PI / N); // hauteur du tambour = H / t
+      const { clientWidth: largeur, clientHeight: hauteur } = document.documentElement;
+      const parHauteur = (hauteur - 226) / (1 / t + 0.4);
+      const parLargeur = (largeur * 0.94 - 70) / RATIO;
+      setH(Math.round(Math.max(48, Math.min(260, parHauteur, parLargeur))));
+    };
     dimensionner();
     addEventListener("resize", dimensionner);
     return () => removeEventListener("resize", dimensionner);
-  }, []);
+  }, [N]);
   useEffect(() => {
     const el = zoneAmpoules.current;
     if (!el) return;
@@ -252,7 +262,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   const nbTirees = prefs.tirees.filter((i) => i < N).length;
 
   return (
-    <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px` }}>
+    <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px`, ["--W" as string]: `${Math.round(H * RATIO)}px` }}>
       <header className={prefs.masque ? "masque" : ""}>
         <h1>🎵 {roue.titre}</h1>
         <div className="hd-actions">
