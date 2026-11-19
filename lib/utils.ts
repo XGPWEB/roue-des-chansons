@@ -21,8 +21,3 @@ export const initiales = (s: string) =>
 export const photoUrl = (c: Pick<Chanson, "artiste" | "titre" | "photo">) =>
   c.photo?.trim() ||
   `/api/photo?artiste=${encodeURIComponent(c.artiste)}&titre=${encodeURIComponent(c.titre)}`;
-
-export const karaokeUrl = (c: Pick<Chanson, "artiste" | "titre" | "karaoke">) =>
-  c.karaoke?.trim() ||
-  "https://www.youtube.com/results?search_query=" +
-    encodeURIComponent(`${c.artiste} ${c.titre} karaoké`);

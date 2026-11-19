@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Chanson, RoueConfig } from "@/data/types";
 import { audio, confettis, fanfare, tick } from "@/lib/effets";
-import { karaokeUrl, photoUrl } from "@/lib/utils";
+import { photoUrl } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import Editeur, { listeValide, type Liste } from "./Editeur";
+import Karaoke from "./Karaoke";
 
 const COULEURS = ["#d62839", "#f5c542", "#1e63d6", "#8e2bd1", "#12a150", "#ff7a1a"];
 const CLAIRES = new Set(["#f5c542"]);
@@ -20,6 +21,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   /* ---- liste de chansons : celle du site, ou celle modifiée dans ce navigateur ---- */
   const [perso, setPerso] = useState<Liste | null>(null);
   const [editeur, setEditeur] = useState(false);
+  const [karaoke, setKaraoke] = useState<Resultat["chanson"] | null>(null);
   const chansons = perso?.chansons ?? roue.chansons;
   const lancementCh = perso ? perso.lancement : roue.lancement;
   const N = chansons.length;
@@ -202,7 +204,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const cible = e.target as HTMLElement | null;
-      if (editeur || cible?.closest("input, textarea, select, [contenteditable]")) return;
+      if (editeur || karaoke || cible?.closest("input, textarea, select, [contenteditable]")) return;
       if (e.code === "KeyA" && !e.ctrlKey && !e.metaKey && !e.altKey) basculerAdmin();
       if (e.code === "Space") {
         e.preventDefault();
@@ -213,7 +215,7 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [resultat, tourner, editeur, basculerAdmin]);
+  }, [resultat, tourner, editeur, karaoke, basculerAdmin]);
 
   return (
     <div className="ecran" style={{ ["--H" as string]: `${H}px`, ["--R" as string]: `${R}px` }}>
@@ -332,9 +334,15 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
               </div>
             )}
             <div className="row">
-              <a className="btn kara" href={karaokeUrl(resultat.chanson)} target="_blank" rel="noopener noreferrer">
+              <button
+                className="btn kara"
+                onClick={() => {
+                  setKaraoke(resultat.chanson);
+                  setResultat(null);
+                }}
+              >
                 🎤 Lancer le karaoké
-              </a>
+              </button>
               <button className="btn" onClick={() => setResultat(null)}>
                 Fermer
               </button>
@@ -352,6 +360,8 @@ export default function Roue({ roue }: { roue: RoueConfig }) {
           onFermer={() => setEditeur(false)}
         />
       )}
+
+      {karaoke && <Karaoke chanson={karaoke} onFermer={() => setKaraoke(null)} />}
 
       {toast && <div className="toast">{toast}</div>}
       <canvas ref={canvas} className="confetti" />

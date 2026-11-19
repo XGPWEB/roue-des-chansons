@@ -166,3 +166,27 @@ main { flex: 1; display: flex; flex-direction: column; align-items: center; just
   .ed-lancement { grid-template-columns: 1fr; }
   .admin { border-left: 0; padding-left: 0; }
 }
+
+/* ---- lecteur karaoké intégré ---- */
+.karaoke {
+  position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column;
+  background: radial-gradient(ellipse at 50% 35%, #3a0d6b 0%, var(--bg1) 45%, var(--bg2) 100%);
+  animation: apparait .25s ease-out;
+}
+.karaoke main { gap: 12px; padding: 0 18px 18px; }
+.k-titre { display: flex; align-items: center; gap: 12px; margin-right: auto; min-width: 0; }
+.k-micro { font-size: 28px; }
+.k-titre span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.k-titre small { color: var(--gold); font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; font-size: 13px; }
+.k-titre b { font-size: clamp(20px, 3vw, 30px); font-weight: 900; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.k-ecran {
+  position: relative; width: min(100%, calc((100vh - 170px) * 16 / 9)); aspect-ratio: 16 / 9;
+  border-radius: 22px; padding: 14px;
+  background: linear-gradient(180deg, #3b2400, #7a4f00 15%, #c99a2e 50%, #7a4f00 85%, #3b2400);
+  box-shadow: 0 0 0 4px #2a1700, 0 25px 60px rgba(0,0,0,.7), 0 0 80px rgba(245,197,66,.25);
+}
+.k-video, .k-message { position: absolute; inset: 14px; border-radius: 12px; overflow: hidden; background: #000; }
+.k-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+.k-message { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 30px; text-align: center; font-size: 18px; line-height: 1.4; }
+.k-source { font-size: 13px; opacity: .55; max-width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.btn.kara { font-family: inherit; }

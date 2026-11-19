@@ -233,7 +233,7 @@ export default function Editeur({
                     />
                     <input
                       className="champ"
-                      placeholder="Lien karaoké (vide = recherche YouTube)"
+                      placeholder="Lien YouTube du karaoké (vide = vidéo trouvée automatiquement)"
                       value={l.karaoke ?? ""}
                       onChange={(e) => maj(l.id, { karaoke: e.target.value })}
                     />
